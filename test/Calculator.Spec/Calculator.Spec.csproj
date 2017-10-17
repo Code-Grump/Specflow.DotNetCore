@@ -25,10 +25,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <DotNetCliToolReference Include="SpecFlow.NetCore" Version="1.0.0-rc9" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\src\Calculator\Calculator.csproj" />
   </ItemGroup>
 
@@ -37,8 +33,195 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  
-  <Target Name="PrecompileScript" BeforeTargets="BeforeBuild">
-    <Exec Command="dotnet SpecFlow.NetCore" />
+
+  <Target Name="CleanSpecFlowShadowProject" BeforeTargets="BeforeClean">
+
+    <PropertyGroup>
+      <SpecFlowShadowProjectPath Condition="'$(SpecFlowShadowProjectPath)' == ''">$(IntermediateOutputPath)SpecFlowShadowProject\</SpecFlowShadowProjectPath>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <OldSpecFlowShadowProject Include="$(SpecFlowShadowProjectPath)**.*" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(SpecFlowShadowProjectPath)" />
   </Target>
+
+  <Target Name="GetSpecFlowFeatures">
+    
+    <ItemGroup>
+      <SpecFlowFeature Include="@(None)" Condition="'%(Extension)' == '.feature'" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <SpecFlowShadowProjectPath Condition="'$(SpecFlowShadowProjectPath)' == ''">$(IntermediateOutputPath)SpecFlowShadowProject\</SpecFlowShadowProjectPath>
+      <SpecFlowAppConfig>$(SpecFlowShadowProjectPath)app.config</SpecFlowAppConfig>
+      <SpecFlowShadowProject>$(SpecFlowShadowProjectPath)$(MSBuildProjectName).csproj</SpecFlowShadowProject>
+    </PropertyGroup>
+    
+  </Target>
+
+  <Target Name="CreateSpecFlowShadowProject" DependsOnTargets="GetSpecFlowFeatures" Inputs="@(SpecFlowFeature)" Outputs="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity)');$(SpecFlowAppConfig);$(SpecFlowShadowProject)">
+
+    <PropertyGroup>
+      <SpecFlowUnitTestProvider Condition="'%(PackageReference.Identity)' == 'NUnit'">nunit</SpecFlowUnitTestProvider>
+      <SpecFlowUnitTestProvider Condition="'%(PackageReference.Identity)' == 'MSTest.TestFramework'">mstest</SpecFlowUnitTestProvider>
+      <SpecFlowUnitTestProvider Condition="'%(PackageReference.Identity)' == 'xunit'">xunit</SpecFlowUnitTestProvider>
+    </PropertyGroup>
+
+    <Warning Text="No test provider references in project. Defaulted to NUnit provider." Condition="'$(SpecFlowUnitTestProvider)' == ''" />
+
+    <PropertyGroup>
+      <SpecFlowUnitTestProvider Condition="'$(SpecFlowUnitTestProvider)' == ''">nunit</SpecFlowUnitTestProvider>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(SpecFlowShadowProjectPath)" />
+
+    <CreateSpecFlowAppConfig OutputFile="$(SpecFlowAppConfig)" UnitTestProvider="$(SpecFlowUnitTestProvider)" />
+    
+    <CreateSpecFlowProjectFile FeatureFiles="@(SpecFlowFeature)" OutputFile="$(SpecFlowShadowProject)" />
+
+    <Copy SourceFiles="@(SpecFlowFeature)" DestinationFiles="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity)')" />
+    
+  </Target>
+  
+  <Target Name="GenerateSpecFlowCodeBehindCsFiles" BeforeTargets="BeforeBuild" DependsOnTargets="CreateSpecFlowShadowProject" Inputs="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity)')" Outputs="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity).cs')">
+
+    <PropertyGroup>
+      <GenerateCodeBehindCommand>generateall "$(SpecFlowShadowProject)"</GenerateCodeBehindCommand>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <NuGetPackageFolder Include="$(NuGetPackageFolders)" />
+      <SpecFlowTool Include="C:\Users\Paul\.nuget\packages\SpecFlow\2.2.1\tools\specflow.exe" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <GenerateCodeBehindCommand>generateall "$(SpecFlowShadowProject)" /force /verbose</GenerateCodeBehindCommand>
+      <SpecFlowToolsPath>C:\Users\Paul\.nuget\packages\SpecFlow\2.2.1\tools\</SpecFlowToolsPath>
+      <SpecFlowToolExe>specflow.exe</SpecFlowToolExe>
+    </PropertyGroup>
+
+    <Warning Text="$(GenerateCodeBehindCommand)" />
+
+    <Exec Command="$(GenerateCodeBehindCommand)" ToolExe="$(SpecFlowToolExe)" ToolPath="$(SpecFlowToolsPath)" WorkingDirectory="$(MSBuildProjectDirectory)" />
+
+    <ItemGroup>
+      <Compile Include="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity).cs')" />
+    </ItemGroup>
+
+  </Target>
+
+  <UsingTask TaskName="CreateSpecFlowAppConfig" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
+    <ParameterGroup>
+      <OutputFile ParameterType="Microsoft.Build.Framework.ITaskItem" Required="true" />
+      <UnitTestProvider ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+
+    <Task>
+      <Reference Include="System.Xml" />
+      <Using Namespace="System" />
+      <Using Namespace="System.Xml" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+                
+        var settings = new XmlWriterSettings
+        {
+          Indent = true
+        };
+        
+        using (var w = XmlWriter.Create(OutputFile.ItemSpec, settings))
+        {          
+          w.WriteStartElement("configuration");
+          
+          w.WriteStartElement("configSections");
+          
+          w.WriteStartElement("section");
+          w.WriteAttributeString("name", "specFlow");
+          w.WriteAttributeString("type", "TechTalk.SpecFlow.Configuration.ConfigurationSectionHandler, TechTalk.SpecFlow");
+          w.WriteEndElement();
+          
+          w.WriteEndElement();
+          
+          w.WriteStartElement("specFlow");
+          
+          w.WriteStartElement("unitTestProvider");
+          w.WriteAttributeString("name", UnitTestProvider);
+          w.WriteEndElement();
+          
+          w.WriteEndElement();
+          
+          w.WriteEndElement();
+        }
+        
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <UsingTask TaskName="CreateSpecFlowProjectFile" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
+    <ParameterGroup>
+      <OutputFile ParameterType="Microsoft.Build.Framework.ITaskItem" Required="true" />
+      <FeatureFiles ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+    </ParameterGroup>
+
+    <Task>
+      <Reference Include="System.Xml" />
+      <Using Namespace="System" />
+      <Using Namespace="System.Xml" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        
+        var ns = "http://schemas.microsoft.com/developer/msbuild/2003";
+        
+        var settings = new XmlWriterSettings
+        {
+          Indent = true
+        };
+        
+        using (var w = XmlWriter.Create(OutputFile.ItemSpec, settings))
+        {          
+          w.WriteStartElement("Project", ns);
+          w.WriteAttributeString("ToolsVersion", "14.0");
+          w.WriteAttributeString("DefaultTargets", "Build");
+          
+          w.WriteStartElement("PropertyGroup", ns);
+          w.WriteStartElement("RootNamespace", ns);
+          w.WriteValue("SpecFlow.GeneratedTests");
+          w.WriteEndElement();
+          w.WriteStartElement("AssemblyName", ns);
+          w.WriteValue("SpecFlow.GeneratedTests");
+          w.WriteEndElement();
+          w.WriteEndElement();
+          
+          w.WriteStartElement("ItemGroup", ns);
+          w.WriteStartElement("None", ns);
+          w.WriteAttributeString("Include", "app.config");
+          w.WriteEndElement();
+          
+          foreach (var featureFile in FeatureFiles)
+          {
+            w.WriteStartElement("None", ns);
+            w.WriteAttributeString("Include", featureFile.ItemSpec);
+            
+            w.WriteStartElement("Generator", ns);
+            w.WriteValue("SpecFlowSingleFileGenerator");
+            w.WriteEndElement();
+            
+            w.WriteStartElement("LastGenOutput", ns);
+            w.WriteValue(featureFile.ItemSpec + ".cs");
+            w.WriteEndElement();
+          
+            w.WriteEndElement();
+          }
+          
+          w.WriteEndElement();
+          
+          w.WriteEndElement();
+        }
+        
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
 </Project>
