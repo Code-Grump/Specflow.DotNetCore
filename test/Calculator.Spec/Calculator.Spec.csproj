@@ -87,24 +87,18 @@
   
   <Target Name="GenerateSpecFlowCodeBehindCsFiles" BeforeTargets="BeforeBuild" DependsOnTargets="CreateSpecFlowShadowProject" Inputs="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity)')" Outputs="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity).cs')">
 
-    <PropertyGroup>
-      <GenerateCodeBehindCommand>generateall "$(SpecFlowShadowProject)"</GenerateCodeBehindCommand>
-    </PropertyGroup>
-
     <ItemGroup>
-      <NuGetPackageFolder Include="$(NuGetPackageFolders)" />
-      <SpecFlowTool Include="C:\Users\Paul\.nuget\packages\SpecFlow\2.2.1\tools\specflow.exe" />
+      <SpecFlowPackageReference Include="@(PackageReference)" Condition="'%(Identity)' == 'SpecFlow'" />
     </ItemGroup>
 
     <PropertyGroup>
-      <GenerateCodeBehindCommand>generateall "$(SpecFlowShadowProject)" /force /verbose</GenerateCodeBehindCommand>
-      <SpecFlowToolsPath>C:\Users\Paul\.nuget\packages\SpecFlow\2.2.1\tools\</SpecFlowToolsPath>
+      <SpecFlowPackageDir>$(NuGetPackageRoot)@(SpecFlowPackageReference->'%(Identity)\%(Version)')\</SpecFlowPackageDir>
+      <SpecFlowToolsPath>$(SpecFlowPackageDir)tools\</SpecFlowToolsPath>
       <SpecFlowToolExe>specflow.exe</SpecFlowToolExe>
+      <GenerateCodeBehindCommand>$(SpecFlowToolsPath)$(SpecFlowToolExe) generateall "$(SpecFlowShadowProject)"</GenerateCodeBehindCommand>
     </PropertyGroup>
-
-    <Warning Text="$(GenerateCodeBehindCommand)" />
-
-    <Exec Command="$(GenerateCodeBehindCommand)" ToolExe="$(SpecFlowToolExe)" ToolPath="$(SpecFlowToolsPath)" WorkingDirectory="$(MSBuildProjectDirectory)" />
+    
+    <Exec Command="$(GenerateCodeBehindCommand)" WorkingDirectory="$(MSBuildProjectDirectory)" />
 
     <ItemGroup>
       <Compile Include="@(SpecFlowFeature->'$(SpecFlowShadowProjectPath)%(Identity).cs')" />
